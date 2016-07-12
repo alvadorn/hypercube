@@ -1,4 +1,11 @@
 from mininet.topo import Topo
+from mininet.log import setLogLevel
+from mininet.cli import CLI
+from mininet.node import RemoteController, OVSSwitch
+from mininet.net import Mininet
+
+setLogLevel('info')
+controller = RemoteController("c0", ip="127.0.0.1", port=6633)
 
 class HypercubeTopo(Topo):
     def __init__(self):
@@ -13,14 +20,14 @@ class HypercubeTopo(Topo):
         G = "00:00:00:03:00:00"
         H = "00:00:00:04:00:00"
 
-        sA = self.addNode("sA", mac=A)
-        sB = self.addNode("sB", mac=B)
-        sC = self.addNode("sC", mac=C)
-        sD = self.addNode("sD", mac=D)
-        sE = self.addNode("sE", mac=E)
-        sF = self.addNode("sF", mac=F)
-        sG = self.addNode("sG", mac=G)
-        sH = self.addNode("sH", mac=H)
+        sA = self.addSwitch("s1")
+        sB = self.addSwitch("s2")
+        sC = self.addSwitch("s3")
+        sD = self.addSwitch("s4")
+        sE = self.addSwitch("s5")
+        sF = self.addSwitch("s6")
+        sG = self.addSwitch("s7")
+        sH = self.addSwitch("s8")
 
         self.addLink(sA, sB)
         self.addLink(sA, sF)
@@ -34,5 +41,13 @@ class HypercubeTopo(Topo):
         self.addLink(sC, sH)
         self.addLink(sC, sB)
         self.addLink(sE, sH)
-        
-topos = { 'hypercube': ( lambda: HypercubeTopo() ) }
+
+topo = HypercubeTopo()
+net = Mininet(topo = topo, switch=OVSSwitch, build = False)
+net.addController(controller)
+net.build()
+net.start()
+CLI(net)
+net.stop()
+
+#topos = { 'hypercube': ( lambda: HypercubeTopo() ) }
