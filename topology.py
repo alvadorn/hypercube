@@ -42,6 +42,25 @@ class HypercubeTopo(Topo):
         self.addLink(sC, sB)
         self.addLink(sE, sH)
 
+        # hosts for switches
+        hA = self.addHost("h1")
+        hB = self.addHost("h2")
+        hC = self.addHost("h3")
+        hD = self.addHost("h4")
+        hE = self.addHost("h5")
+        hF = self.addHost("h6")
+        hG = self.addHost("h7")
+        hH = self.addHost("h8")
+
+        self.addLink(sA, hA)
+        self.addLink(sB, hB)
+        self.addLink(sC, hC)
+        self.addLink(sD, hD)
+        self.addLink(sE, hE)
+        self.addLink(sF, hF)
+        self.addLink(sG, hG)
+        self.addLink(sH, hH)
+
 topo = HypercubeTopo()
 net = Mininet(topo = topo, switch=OVSSwitch, build = False)
 net.addController(controller)
