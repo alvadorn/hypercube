@@ -1,7 +1,9 @@
 from ryu.base import app_manager
-from ryu.lib.packet import packet, ethernet
+from ryu.lib.packet import packet, ethernet, ether_types, ipv4, udp
 from ryu.controller import dpset, handler, ofp_event
 from ryu.topology import api as ryu_api
+from ryu.lib.packet import in_proto as inet
+from ryu.ofproto import ofproto_v1_0
 
 # first packet send libs
 import threading
@@ -15,6 +17,21 @@ import inspect
 
 SLEEP_SECS=2.0
 nodes_count = 0
+DST_PORT = 54321
+SRC_PORT = 65500
+
+def prepare_packet(data):
+    pkt = packet.Packet()
+    eth = ethernet.ethernet("ff:ff:ff:ff:ff:ff", "ff:ff:ff:ff:ff:ff")
+    ip = ipv4.ipv4(src="255.255.255.255", dst="255.255.255.255", proto=inet.IPPROTO_UDP)
+    udp1 = udp.udp(dst_port=DST_PORT, src_port=SRC_PORT)
+    pkt.add_protocol(eth)
+    pkt.add_protocol(ip)
+    pkt.add_protocol(udp1)
+    pkt.add_protocol(data)
+    pkt.serialize()
+    return pkt.data
+
 
 class FirstPacketSender(threading.Thread):
     def __init__(self, dp, count):
@@ -23,6 +40,7 @@ class FirstPacketSender(threading.Thread):
         self.count = count
         self.structure = DataStructure()
         print(dir(dp))
+        print(dp.ports)
 
     def send_msg(self, data):
         actions = [self.dp.ofproto_parser.OFPActionOutput(self.dp.ofproto.OFPP_FLOOD)]
@@ -34,9 +52,10 @@ class FirstPacketSender(threading.Thread):
         global nodes_count
         time.sleep(SLEEP_SECS)
         util.number_bytes(self.count)
-        pkt = packet.Packet(util.arr_from_bit_len(nodes_count))
-        #print(pkt.data())
-        self.send_msg(util.arr_from_bit_len(nodes_count))
+        #pkt = packet.Packet((util.arr_from_bit_len(nodes_count))))
+
+        data = prepare_packet(util.arr_from_bit_len(nodes_count))
+        self.send_msg(data)
         print("packet sent")
 
 
@@ -44,7 +63,7 @@ class FirstPacketSender(threading.Thread):
 
 
 class HypercubeApp(app_manager.RyuApp):
-
+    OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
     def __init__(self, *args, **kwargs):
         super(HypercubeApp, self).__init__(*args, **kwargs)
         self.firstNode = None
@@ -71,13 +90,19 @@ class HypercubeApp(app_manager.RyuApp):
     @handler.set_ev_cls(ofp_event.EventOFPPacketIn, handler.MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         self.logger.info("packet arrived")
-        if completed:
+        if self.completed:
             return
         msg = ev.msg
         data = msg.data
         dp = msg.datapath
-        dpid = dp.dpid
+        dpid = dp.id
         bit_id = 0
+
+        pkt = packet.Packet(data)
+        udp1 = pkt.get_protocol(udp.udp)
+        self.logger.info(udp.src_port)
+        self.logger.info(udp.dst_port)
+        return
         if dpid in self.dps:
             bit_id = self.dps[dp]
         else:
