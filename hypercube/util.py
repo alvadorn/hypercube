@@ -1,4 +1,4 @@
-
+import array
 
 def number_bytes(bit_length):
     number_bytes = (int)(bit_length / 8)
@@ -15,4 +15,5 @@ def bytes_array(array):
 def arr_from_bit_len(bit_length):
     bytess = number_bytes(bit_length)
     bytes_list = [0] * bytess
-    return "".join(map(chr, bytes_list))
+    #return "".join(map(chr, bytes_list)) + chr(255)
+    return array.array('B', bytes_list)

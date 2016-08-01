@@ -31,7 +31,7 @@ def create_socket(ip, socket_string):
 
 if __name__ == "__main__":
   cube_length = int(sys.argv[1])
-  #ip = sys.argv[2]
+  ip = sys.argv[2]
 
   socket_string = array.array('B', create_socket_message(2 ** cube_length))
-  create_socket('255.255.255.255', socket_string)
+  create_socket(ip, socket_string)

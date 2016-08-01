@@ -43,7 +43,7 @@ class HypercubeTopo(Topo):
         self.addLink(sE, sH)
 
         # hosts for switches
-        hA = self.addHost("h1")
+        hA = self.addHost("h1")#, ip="172.20.0.1/24", defaultRoute="via 172.20.0.20")
         hB = self.addHost("h2")
         hC = self.addHost("h3")
         hD = self.addHost("h4")

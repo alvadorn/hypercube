@@ -1,8 +1,13 @@
 from ryu.base import app_manager
-from ryu.lib.packet import packet, ethernet
-from ryu.controller import dpset, handler, ofp_event
+from ryu.lib.packet import packet, ethernet, ether_types, udp, ipv4, arp
+from ryu.controller import ofp_event
+from ryu.controller.handler import MAIN_DISPATCHER
+from ryu.controller.handler import set_ev_cls
 from ryu.topology import api as ryu_api
+from ryu.ofproto import ofproto_v1_0
 
+
+import array
 # first packet send libs
 import threading
 import time
@@ -16,6 +21,7 @@ import inspect
 SLEEP_SECS=2.0
 nodes_count = 0
 
+"""
 class FirstPacketSender(threading.Thread):
     def __init__(self, dp, count):
         threading.Thread.__init__(self)
@@ -41,9 +47,10 @@ class FirstPacketSender(threading.Thread):
 
 
 
-
+"""
 
 class HypercubeApp(app_manager.RyuApp):
+    OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         super(HypercubeApp, self).__init__(*args, **kwargs)
@@ -52,32 +59,62 @@ class HypercubeApp(app_manager.RyuApp):
         self.dps = {} # dpid -> bit id
         self.completed = False
         self.structure = DataStructure()
+        self.mac_to_port = {}
+        self.logger.info("Iniciando")
+        self.doing = False
 
-    @handler.set_ev_cls(dpset.EventDP, dpset.DPSET_EV_DISPATCHER)
-    def handler_datapath(self, ev):
-        global nodes_count
-        if ev.enter:
-            if self.firstNode is None:
-                self.firstNode = ev.dp
-                self.dps[ev.dp.id] = self.dps_count
-                self.dps_count = self.dps_count + 1
-                self.structure.add_node(self.dps[ev.dp.id], None)
-                FirstPacketSender(ev.dp, 0).start()
-            nodes_count = nodes_count + 1
-            #self.logger.info(dir(ev.dp))
-            print(ev.dp.id)
+    def add_flow(self, datapath, in_port, dst, actions):
+        ofproto = datapath.ofproto
+
+        match = datapath.ofproto_parser.OFPMatch(
+            in_port=in_port, dl_dst=haddr_to_bin(dst))
+
+        mod = datapath.ofproto_parser.OFPFlowMod(
+            datapath=datapath, match=match, cookie=0,
+            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
+            priority=ofproto.OFP_DEFAULT_PRIORITY,
+            flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
+        datapath.send_msg(mod)
+
+    def start_packet(self, datapath, msg):
+        cube_length = len(ryu_api.get_all_switch(self))
+        arr = util.arr_from_bit_len(cube_length)
+        pkt = packet.Packet()
+        pkt_begin = packet.Packet(data=msg.data)
+        eth = pkt_begin.get_protocol(ethernet.ethernet)
+        pkt.add_protocol(ethernet.ethernet(src=eth.src))
+        pkt.add_protocol(bytearray(arr))
+        pkt.serialize()
+        print(array.array('B', pkt.data))
+        actions = [datapath.ofproto_parser.OFPActionOutput(datapath.ofproto.OFPP_FLOOD)]
+        self.send_msg(pkt.data, datapath, msg, actions)
 
 
-    @handler.set_ev_cls(ofp_event.EventOFPPacketIn, handler.MAIN_DISPATCHER)
+    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         self.logger.info("packet arrived")
-        if completed:
-            return
         msg = ev.msg
         data = msg.data
-        dp = msg.datapath
-        dpid = dp.dpid
-        bit_id = 0
+        datapath = msg.datapath
+        pkt = packet.Packet(data=data)
+        eth = pkt.get_protocol(ethernet.ethernet)
+        ar = pkt.get_protocol(arp.arp)
+        if eth.ethertype == ether_types.ETH_TYPE_ARP:
+            self.logger.info("ARP")
+            actions = [datapath.ofproto_parser.OFPActionOutput(msg.in_port)]
+            pkt2 = packet.Packet()
+            pkt2.add_protocol(ethernet.ethernet(dst=eth.src, src=eth.dst, ethertype=ether_types.ETH_TYPE_ARP))
+            pkt2.add_protocol(arp.arp(opcode=2,src_mac=eth.dst, dst_mac=eth.src,src_ip=ar.dst_ip, dst_ip=ar.src_ip))
+            pkt2.serialize()
+            self.send_msg(pkt2.data, datapath, msg, actions)
+            if not self.completed and not self.doing:
+                self.start_packet(datapath, msg)
+                self.doing = True
+            #self.treat_arp_request(datapath, eth, msg)
+        #dpid = dp.dpid
+        #if completed:
+        #    return
+        """bit_id = 0
         if dpid in self.dps:
             bit_id = self.dps[dp]
         else:
@@ -102,13 +139,51 @@ class HypercubeApp(app_manager.RyuApp):
             # mark bit and send and add to structure
         else:
             return
+        """
 
-    def send_msg(self, data, dp, msg):
-        actions = [dp.ofproto_parser.OFPActionOutput(dp.of_proto.OFPP_FLOOD)]
-        out = dp.ofproto_parser.OFPPacketOut(datapath=dp, buffer_id=msg.buffer_id,
-            in_port=msg.in_port, actions=actions, data=data)
+    def treat_arp_request(self, datapath, eth, msg):
+        data = msg.data
+        dst = eth.dst
+        src = eth.src
+        ofproto = datapath.ofproto
+
+        dpid = datapath.id
+        self.mac_to_port.setdefault(dpid, {})
+
+        self.logger.info("packet in %s %s %s %s", dpid, src, dst, msg.in_port)
+
+        # learn a mac address to avoid FLOOD next time.
+        self.mac_to_port[dpid][src] = msg.in_port
+
+        if dst in self.mac_to_port[dpid]:
+            out_port = self.mac_to_port[dpid][dst]
+        else:
+            out_port = ofproto.OFPP_FLOOD
+
+        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+
+        # install a flow to avoid packet_in next time
+        if out_port != ofproto.OFPP_FLOOD:
+            self.add_flow(datapath, msg.in_port, dst, actions)
+
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
+
+        out = datapath.ofproto_parser.OFPPacketOut(
+            datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.in_port,
+            actions=actions, data=data)
+        datapath.send_msg(out)
+
+    def send_msg(self, data, dp, msg, actions):
+        """out = dp.ofproto_parser.OFPPacketOut(datapath=dp, buffer_id=msg.buffer_id,
+            in_port=msg.in_port, actions=actions, data=data)"""
+        self.logger.info(msg.buffer_id)
+        out = dp.ofproto_parser.OFPPacketOut(
+            datapath=dp, buffer_id=dp.ofproto.OFP_NO_BUFFER, in_port=msg.in_port,
+            actions=actions, data=data)
         dp.send_msg(out)
-
+        print("sent")
 
     def miss_only_one_bit(self, data, dps_len):
         completed = data[0] == 0x7F
