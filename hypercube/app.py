@@ -39,8 +39,8 @@ class FirstPacketSender(threading.Thread):
         self.dp = dp
         self.count = count
         self.structure = DataStructure()
-        print(dir(dp))
-        print(dp.ports)
+        #print(dir(dp))
+        #print(dp.ports)
 
     def send_msg(self, data):
         actions = [self.dp.ofproto_parser.OFPActionOutput(self.dp.ofproto.OFPP_FLOOD)]
@@ -66,7 +66,8 @@ class HypercubeApp(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
     def __init__(self, *args, **kwargs):
         super(HypercubeApp, self).__init__(*args, **kwargs)
-        self.firstNode = None
+        self.first_node = None
+        self.first_node_dp_id = None
         self.dps_count = 0
         self.dps = {} # dpid -> bit id
         self.completed = False
@@ -76,11 +77,13 @@ class HypercubeApp(app_manager.RyuApp):
     def handler_datapath(self, ev):
         global nodes_count
         if ev.enter:
-            if self.firstNode is None:
-                self.firstNode = ev.dp
+            if self.first_node is None:
+                self.first_node = ev.dp
+                self.first_node_dp_id = ev.dp.id
                 self.dps[ev.dp.id] = self.dps_count
                 self.dps_count = self.dps_count + 1
                 self.structure.add_node(self.dps[ev.dp.id], None)
+                self.logger.info(ev.dp.id)
                 FirstPacketSender(ev.dp, 0).start()
             nodes_count = nodes_count + 1
             #self.logger.info(dir(ev.dp))
@@ -100,23 +103,41 @@ class HypercubeApp(app_manager.RyuApp):
 
         pkt = packet.Packet(data)
         udp1 = pkt.get_protocol(udp.udp)
-        self.logger.info(udp.src_port)
-        self.logger.info(udp.dst_port)
-        return
+        self.logger.info("src pt: %s dst pst: %s dpid: %s", udp1.src_port, udp1.dst_port,dpid)
+
+
+        udpdata = None
+
+        for prot in pkt:
+            if type(prot) is str:
+                udpdata = prot
+
+
+
         if dpid in self.dps:
+            print("enter 1")
             bit_id = self.dps[dp]
         else:
+            print("enter 2")
             self.dps[dpid] = self.dps_count
             bit_id = self.dps_count
             self.dps_count = self.dps_count + 1
 
-        if self.dps.keys()[0] == dpid:
-            if miss_only_one_bit():
+        print("bit id: %s", bit_id)
+
+        if self.first_node_dp_id == dpid:
+            print("enter 3")
+            self.logger.info(self.dps)
+            global nodes_count
+            if self.miss_only_one_bit(list(udpdata), nodes_count):
                 completed = true
                 print(self.structure.find_path())
             else:
+                print("what to do")
                 return
                 # finish algorithm
+
+        return
         if not bit_marked(data, bit_id):
             mark_bit(data, bit_id)
             parent_id = (data[-2] << 8) + data[-1]
