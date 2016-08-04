@@ -12,8 +12,9 @@ def number_bytes(bit_length):
 def bytes_array(array):
     return array.array('B', array)
 
-def arr_from_bit_len(bit_length):
+def arr_from_bit_len(bit_length, unique_id):
     bytess = number_bytes(bit_length)
     bytes_list = [0] * bytess
     #return "".join(map(chr, bytes_list))
-    return bytearray(bytes_list) + bytearray([255, 255])
+    uniques_id = [unique_id >> 8 & 0xFF, unique_id & 0xFF]
+    return bytearray(bytes_list) + bytearray(uniques_id)
